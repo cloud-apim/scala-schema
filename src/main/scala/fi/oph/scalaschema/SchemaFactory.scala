@@ -2,9 +2,8 @@ package fi.oph.scalaschema
 
 import java.lang.reflect.Constructor
 import java.sql.Timestamp
-import java.time.{LocalDate, LocalDateTime, ZonedDateTime, OffsetDateTime}
+import java.time.{LocalDate, LocalDateTime, OffsetDateTime, ZonedDateTime}
 import java.util.Date
-
 import fi.oph.scalaschema.Annotations.findAnnotations
 import fi.oph.scalaschema.annotation._
 import org.apache.commons.text.StringEscapeUtils
@@ -13,6 +12,7 @@ import org.reflections.Reflections
 
 import scala.annotation.StaticAnnotation
 import scala.reflect.runtime.{universe => ru}
+import scala.tools.nsc.MainBench.theCompiler.RuntimeClass
 import scala.util.Try
 
 object SchemaFactory {
@@ -46,7 +46,12 @@ case class SchemaFactory() {
 
   private def typeByName(className: String): ru.Type = {
     typeByNameCache.getOrElseUpdate(className, {
-      reflect.runtime.currentMirror.classSymbol(Class.forName(className)).toType
+      val parts = className.split("\\.")
+      val clazz: RuntimeClass = Try(Class.forName(className))
+        .orElse(Try(Class.forName(className + "$")))
+        .orElse(Try(Class.forName(s"${parts.init.mkString(".")}$$${parts.last}$$")))
+        .get
+      reflect.runtime.currentMirror.classSymbol(clazz).toType
     })
   }
 
@@ -328,7 +333,7 @@ object Annotations {
 
   def findAnnotations(symbol: ru.Symbol, annotationsSupported: ru.Symbol => Boolean): List[StaticAnnotation] = this.synchronized {
     val annotations = annotationCache.getOrElseUpdate(symbol, {
-      symbol.annotations.map { annotation =>
+      symbol.annotations.filter(a => a.toString.startsWith("fi.oph.scalaschema.")).map { annotation =>
         val annotationSymbol: ru.Symbol = annotation.tree.tpe.typeSymbol
         val annotationParams: List[ru.Tree] = annotation.tree.children.tail
         val staticAnnotation = Annotations.parseAnnotation(annotationSymbol, annotationParams)
